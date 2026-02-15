@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- ✅ Metadata, Fonts, External Libraries & Styling -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pneumonia Detection</title>
+
+  <!--  Chart.js for confidence bar chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!--  Font Awesome for medical-themed icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <!--  Custom CSS for layout, buttons, previews, results -->
+  <style>
+    /* ✅ Global Layout Styling */
+    body {
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #e0f7fa, #f9fbe7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    /*  Page Title */
+    h1 {
+      font-size: 2.8rem;
+      margin-bottom: 30px;
+      color: #333;
+      text-shadow: 1px 1px 0 #fff;
+    }
+
+    /*  Upload & Button Container Styling */
+    .form-container {
+      background: white;
+      border-radius: 20px;
+      padding: 30px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+    }
+
+    /*  File Upload Styling */
+    input[type="file"] {
+      margin: 20px 0;
+      width: 100%;
+      padding: 12px;
+      border: 2px dashed #bbb;
+      border-radius: 10px;
+      background: #f9f9f9;
+      transition: 0.3s;
+    }
+
+    input[type="file"]:hover {
+      border-color: #007bff;
+    }
+
+    /*  Buttons */
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      margin: 10px 5px;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    /*  Uploaded Image Preview Styling */
+    .image-preview {
+      margin-top: 20px;
+      max-width: 500px;
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .image-preview img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /*  Prediction Result Box */
+    .result-box {
+      background: white;
+      margin-top: 40px;
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 600px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      text-align: center;
+      animation: fadeIn 0.8s ease-in-out;
+    }
+
+    .result-box h2 {
+      font-size: 1.8rem;
+      margin-bottom: 15px;
+    }
+
+    .result-box p {
+      font-size: 1.2rem;
+      margin-top: 10px;
+    }
+
+    .result-box i {
+      font-size: 32px;
+      margin-bottom: 15px;
+    }
+
+    /*  Result Color Coding */
+    .prediction-normal { color: green; font-weight: bold; }
+    .prediction-pneumonia { color: red; font-weight: bold; }
+    .prediction-uncertain { color: orange; font-weight: bold; }
+
+    /*  Error Message */
+    .error {
+      color: red;
+      margin-top: 20px;
+    }
+
+    /*  Re-upload Button Container */
+    .reupload-button {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    /*  Entry Animation */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 🩺 Main Title -->
+  <h1><i class="fas fa-x-ray"></i> Pneumonia Detection</h1>
+
+  <!--  Image Upload & Model Selection Form -->
+  <div class="form-container">
+    {% if not uploaded %}
+      <!--  File Upload Form -->
+      <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept="image/*" required><br>
+        <button type="submit">Upload Image</button>
+      </form>
+    {% else %}
+      <!--  Image Preview -->
+      <div class="image-preview">
+        <img src="{{ image_path }}" alt="Uploaded Image">
+      </div>
+
+      <!--  Model Selection Buttons -->
+      <form method="POST" action="/predict">
+        <input type="hidden" name="image_path" value="{{ image_path }}">
+        <button type="submit" name="model" value="densenet">Use DenseNet</button>
+        <button type="submit" name="model" value="vit">Use ViT</button>
+        <button type="submit" name="model" value="Combined analysis">Combined Analysis</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if prediction %}
+    <!--  Prediction Result Display -->
+    <div class="result-box">
+      <i class="fas fa-diagnoses"></i>
+      <h2>{{ model_used }} Prediction</h2>
+      <p>{{ prediction | safe }}</p>
+    </div>
+
+    {% if keras_conf and vit_conf %}
+      <!--  Confidence Comparison Chart -->
+      <div class="result-box">
+        <h2>Model Confidence Comparison</h2>
+        <canvas id="confidenceChart" width="400" height="200"></canvas>
+      </div>
+
+      <script>
+        const ctx = document.getElementById('confidenceChart').getContext('2d');
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: ['DenseNet', 'ViT'],
+            datasets: [{
+              label: 'Confidence (%)',
+              data: [{{ keras_conf | round(2) }}, {{ vit_conf | round(2) }}],
+              backgroundColor: ['#007bff', '#f54291'],
+              borderRadius: 10
+            }]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 100
+              }
+            },
+            plugins: {
+              legend: {
+                display: false
+              }
+            }
+          }
+        });
+      </script>
+    {% endif %}
+
+    <!--  Re-upload Another Image Button -->
+    <div class="reupload-button">
+      <form method="GET" action="/">
+        <button type="submit">Upload Another Image</button>
+      </form>
+    </div>
+  {% endif %}
+
+  <!--  Error Message Display -->
+  {% if error %}
+    <div class="error"><strong>{{ error }}</strong></div>
+  {% endif %}
+
+</body>
+</html>
